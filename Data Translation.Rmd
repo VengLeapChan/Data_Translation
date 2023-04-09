@@ -1,0 +1,195 @@
+---
+title: "Data Translation Project"
+author: "Veng Leap Chan"
+date: '2022-05-22'
+output: 
+  html_document: 
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(lubridate)
+library(tidyverse)
+library(scales)
+library(vtable)
+library(tigris)
+library(ggsflabel)
+```
+
+Reading In the Data
+
+```{r}
+# dv
+load('king_dailyvisits_load.Rdata')
+
+#ov
+load('king_originvisits_load.Rdata')
+
+#neighborhood_names (only Seattle)
+load('neighborhood_names.Rdata')
+```
+
+King_Dailyvisits_load (dv)
+
+```{r}
+vtable(dv,lush=TRUE)
+```
+
+Looking at this data, there are 5 variables, date, naics_code, niacs_title, brands, and vists_by_day. Looking at the vtables and the documentation, we see that niacs_title is missing some values.
+
+```{r}
+naics_title_missing = dv %>% 
+  filter(is.na(naics_title))
+```
+
+Through further investigation, I see that the missing naics title all have missing brands, which could mean that the these data points are of niche, smaller brands in niche industries. Since we still have naics code, this will not interfere what we see.
+
+This data set tell us about the number of visits made to a certain store, naics code on a specific date in king county.
+
+```{r error=FALSE}
+industry = ov %>% 
+  mutate(naics_two_digit = ifelse(nchar(naics_code)==4,floor(naics_code/100),floor(naics_code/10000)))%>% 
+  group_by(naics_two_digit) %>% 
+  summarize(count = n()) %>% 
+  arrange(-count)
+```
+
+```{r}
+vtable(ov,lush=TRUE)
+
+```
+
+This data set is an aggregate data set and does not provide specific times and dates, but a total of all the visits in the month of July. Instead, it provides a census block of the where the customers are from to visit the store, which can be extremely useful.
+
+My goal from briefly looking at the data is to first find a specific industry to take a closer look into, choose a company to observe and try to improve upon their business.
+
+## Chart 1 - Naics Titles with the most Brands
+
+As there are missing brands due to its size, I wanted to combine the Naics titles and see which among them has the most brands. I filtered the ov data to remove data points without any brand names as I do not believe it could be used to improve any aspect of any business as we do not know who they are. Thus, I saw that Limited-Service Restaurants had the most brands and thus, we had the most to work with.
+
+```{r}
+brands = ov %>% 
+  filter(brands!='') %>% 
+  group_by(naics_title) %>% 
+  summarize(brand = n()) %>% 
+  arrange(-brand) %>% 
+  slice(1:5)
+
+brands %>% 
+ggplot(mapping = aes(x=reorder(naics_title,brand),y=brand))+
+  geom_segment(aes(xend = naics_title, yend = 0),color=ifelse(brands$naics_title=="Limited-Service Restaurants","red","black"), show.legend = FALSE) +
+  geom_point(color=ifelse(brands$naics_title=="Limited-Service Restaurants","red","black"), show.legend = FALSE) +
+  coord_flip()+
+  labs(x="Naics Title", y = "Count of Brands", title = "Naics Title by Amount of Brands")+
+  theme_classic()+
+  scale_y_continuous(labels = comma)
+```
+
+## Chart 2 - Most Visited Brand for **Restaurants and Other Eating Places**
+
+Taking a closer look at our data, I saw that Limited-Service Restaurants, Full-Service Resturants, and Snack and Nonalcoholic Beverage Bars part of the same beginning naics code, beginning in 7225, which represents "**Restaurants and Other Eating Places".** From my understanding, these places range from cafe, fast food restaurants, to fine-dining. Thus, through this chart, I aimed to find a brand or store that has the most visits in this industry by finding its total visit in July of 2020. I came to the conclusion that the business that I will try to observe and improve will be Starbucks.
+
+```{r}
+FoodIndustry = dv %>% 
+  filter(brands!='') %>% 
+  group_by(brands) %>% 
+  mutate(naics_code_first_2=floor(naics_code/100))%>% 
+  filter(naics_code_first_2==7225) %>%  
+  group_by(brands) %>% 
+  summarise(total_visits = sum(visits_by_day,na.rm = TRUE)) %>% 
+  arrange(-total_visits) %>% 
+  slice(1:5)
+
+## draw a chart 
+FoodIndustry %>% 
+ggplot(mapping = aes(x=reorder(brands,total_visits),y=total_visits,fill=(ifelse(brands=="Starbucks","highlighted","normal"))))+
+  scale_fill_manual(name = "brands", values=c("red","grey50")) +
+  geom_col(show.legend = FALSE)+
+  coord_flip()+
+  labs(x="Accommodation and Food Services Brands", y = "Total Visit in July", title = "Most Visted Accommodation and Food Services Brands")+
+  theme_classic()+
+  scale_y_continuous(labels = comma)
+```
+
+## Chart 3 - Daily Visits of Starbucks 
+
+I wanted to observe Starbucks' daily foot traffic and see any trends. Through my chart, I was able to see that there is a cycle in which Starbucks' visits follow. This information could be used to tremendously improve a business. For instance, Starbucks could increase advertisement on certain days to improve traffic or do sales promotion which could increase interests. Moreover, looking at costs, Starbucks could also reduce the number of employees on certain days, though this type of decision will need further studies.
+
+```{R}
+starbucks = dv %>% 
+  filter(brands=="Starbucks")
+
+starbucks %>% 
+  ggplot(aes(x=date,y=visits_by_day))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "Starbucks Visit by Date", x = "Date", y = "Number of Visit")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Chart 4 - Average Visits to Starbucks based on Day of The Week
+
+To further clarify the trend above and see the pattern in our data, I created a day of the week column which provided which day of the week corresponding to the date. I wanted to confirm my hunch that on certain days people visit Starbucks less. Through the creation of my graph, I saw that this pattern was very true. I saw that the average amount of visits to Starbucks on weekdays were increasing from Monday to Friday and then there is a decline in the weekend. This opens up a lot of possibilities for Starbucks as this pattern allows it to understand when people would prefer to buy Starbucks and on less busy days, such as the weekends, they could run promotions to increase interest.
+
+```{R}
+
+starbucksday = dv %>% 
+  filter(brands=="Starbucks") %>% 
+  mutate(DayOfWeek = wday(ymd(date), label = TRUE, abbr = FALSE)) %>% 
+  group_by(DayOfWeek) %>%
+  summarise(countOfVisits = mean(visits_by_day))
+
+starbucksday %>%
+  ggplot(aes(x=DayOfWeek,y=countOfVisits,group=1))+
+  geom_line()+
+  geom_text(aes(label=ifelse(countOfVisits == max(countOfVisits),"Friday","")),vjust=-0.5)+
+  geom_point(data = starbucksday %>% filter(DayOfWeek == "Friday"), aes(color = "Red"),show.legend = FALSE)+
+  theme_classic()+
+  labs(title = "Average Starbucks Visit Based on Day of the Week", x = "Day of the Week", y = "Average Visit")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## Chart 5 - Creating a heat map of Starbucks' Customers
+
+In my final visualization, I wanted to create a heat map to see which part of Seattle people traveled from to get Starbucks. Doing so helps us better target our advertising effects. For instance, if there are parts of Seattle that does not really visit Starbucks stores, we could send them targeted advertisement as to entice them to come to our stores. On the other hand, if people from certain areas are already interested in Starbucks on their own, we could lower our promotional efforts to save cost. Looking at this visualization, we see that the Del-ridge Neighborhood District, Greater Duwamish, and Central District are districts of Seattle where people do not travel to get Starbucks from. As such, we could use this information to send them some promotion or find personalized marketing for those areas to entice them to visit and purchase Starbucks products and merchandise.
+
+```{R}
+ov2 <- ov %>%
+  filter(brands=="Starbucks") %>%
+  group_by(GEOID) %>%
+  summarise(visits = sum(visits))
+mapdata <- block_groups('WA','033', cb = TRUE, progress_bar = FALSE)
+map_and_data <- geo_join(mapdata, ov, by = 'GEOID', how = 'left')
+
+ov3 <- ov2 %>% 
+  right_join(neighborhood_names) %>%
+  group_by(NEIGHBORHOOD_DISTRICT_NAME) %>%
+  mutate(neighb_visits = sum(visits, na.rm = TRUE))
+
+map_w_neighborhoods <- geo_join(mapdata, ov3, by = 'GEOID', how = 'inner')
+
+neighbmap <- ov3 %>%
+  # Only draw Seattle
+  right_join(neighborhood_names) %>%
+  # Only label each neighborhood once 
+  group_by(NEIGHBORHOOD_DISTRICT_NAME) %>%
+  mutate(neighborhood_label = 
+           case_when(
+             row_number() == 1 ~ NEIGHBORHOOD_DISTRICT_NAME,
+             TRUE ~ NA_character_
+           )) %>%
+  ungroup() 
+
+neighbmap <- geo_join(mapdata, neighbmap, by = 'GEOID', how = 'inner')
+
+ggplot(neighbmap) +
+  geom_sf(aes(fill = neighb_visits)) + 
+  theme_void()+
+  labs(title = 'Map of Seattle Neighborhoods') + 
+  geom_sf_label_repel(aes(label = neighborhood_label))+
+  labs(fill="Visits by Neighborhood")
+```
